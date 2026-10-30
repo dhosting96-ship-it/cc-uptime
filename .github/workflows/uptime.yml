@@ -1,0 +1,48 @@
+name: uptime
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  UA: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36 cc-uptime'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: storefront /us (200 + body marker)
+        run: |
+          code=$(curl -sS -o body.html -w '%{http_code}' --max-time 25 --retry 2 --retry-delay 5 --retry-all-errors -A "$UA" https://candycultivators.com/us)
+          echo "status=$code"
+          test "$code" = 200
+          grep -q 'Candy Cultivators' body.html
+
+      - name: storefront /us/es (200)
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 25 --retry 2 --retry-delay 5 --retry-all-errors -A "$UA" https://candycultivators.com/us/es)
+          echo "status=$code"
+          test "$code" = 200
+
+      - name: admin /health (200)
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 --retry 2 --retry-delay 5 --retry-all-errors -A "$UA" https://admin.candycultivators.com/health)
+          echo "status=$code"
+          test "$code" = 200
+
+      - name: TLS expiry > 14 days
+        run: |
+          for host in candycultivators.com admin.candycultivators.com; do
+            end=$(echo | openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null | openssl x509 -noout -enddate | cut -d= -f2)
+            days=$(( ($(date -d "$end" +%s) - $(date +%s)) / 86400 ))
+            echo "$host expires in $days days ($end)"
+            test "$days" -gt 14
+          done
